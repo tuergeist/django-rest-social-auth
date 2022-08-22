@@ -26,6 +26,40 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
+          name: build-output
           path: dist/*.whl
+
         # Use always() to always run this step to publish test results when there are test failures
         if: ${{ always() }}
+
+  release:
+    name: Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build output(s)
+        uses: actions/download-artifact@v3
+        with:
+          name: build-output
+          path: wheels
+      - name: Publish Github Release
+        id: github-release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: wheels/*.whl
+      - name: Install simple503
+        run: pip install simple503
+      - name: Generate PEP 503 simple repository
+        run: |
+          mkdir public
+          BASE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          RELEASE_URL=$(echo ${{ toJSON(steps.github-release.outputs.url) }}/ | sed 's|/releases/tag/|/releases/download/|g')
+          simple503 -B "$BASE_URL" wheels public
+          rm -rf public/*.whl
+          find public -mindepth 2 -type f -iname index.html -exec sed -i "s|$BASE_URL|$RELEASE_URL|g" {} +
+      - name: Deploy PEP 503 simple repository
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          force_orphan: true
